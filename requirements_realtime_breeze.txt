@@ -1,0 +1,8 @@
+numpy
+sounddevice
+soundfile
+torch
+torchaudio
+transformers
+accelerate
+sentencepiece

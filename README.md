@@ -12,6 +12,7 @@
 ## 功能特色
 
 - 可選擇麥克風輸入裝置
+- 顯示黃色即時音量指示條
 - 顯示即時草稿字幕
 - 顯示 Breeze 精修後的正式字幕
 - 支援開始、停止、清空文字
@@ -73,6 +74,7 @@ python realtime_breeze_gui.py \
 
 ## 執行流程簡述
 
+- `SharedState.audio_level` 會保存最新麥克風音量，供 GUI 顯示黃色音量條
 - `audio_callback()` 只負責把音訊塊送進 queue，避免在音訊 callback 做重工作
 - `processing_worker()` 負責 VAD、片段累積與送出 draft/refine 任務
 - `draft_worker()` 專門處理草稿辨識，避免拖慢收音流程
@@ -83,6 +85,7 @@ python realtime_breeze_gui.py \
 
 - 第一次啟動時，模型可能需要下載，時間會較久
 - 在 macOS 上，請先確認 Terminal、iTerm、PyCharm 或 VSCode 已取得麥克風權限
+- 音量條反映的是即時麥克風振幅，主要用來確認目前是否有收到聲音
 - `Breeze-ASR-26` 較大，正式字幕延遲高於即時草稿屬正常現象
 
 ## 開發與驗證

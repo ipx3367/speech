@@ -68,6 +68,7 @@ class SharedState:
         self.running = False
         self.status_text = "尚未啟動"
         self.last_error = ""
+        self.audio_level = 0.0
 
     def set_draft(self, text: str) -> None:
         with self.lock:
@@ -94,6 +95,10 @@ class SharedState:
             self.last_error = text
             self.status_text = f"錯誤：{text}"
 
+    def set_audio_level(self, level: float) -> None:
+        with self.lock:
+            self.audio_level = max(0.0, min(100.0, float(level)))
+
     def clear(self) -> None:
         with self.lock:
             self.current_draft = ""
@@ -101,6 +106,7 @@ class SharedState:
             self.pending_ids = set()
             self.last_error = ""
             self.status_text = "尚未啟動"
+            self.audio_level = 0.0
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -111,6 +117,7 @@ class SharedState:
                 "running": self.running,
                 "status_text": self.status_text,
                 "last_error": self.last_error,
+                "audio_level": self.audio_level,
             }
 
 
@@ -287,6 +294,7 @@ class AudioCoordinator:
         if status:
             self.state.set_status(f"音訊狀態：{status}")
         chunk = np.copy(indata[:, 0]).astype(np.float32)
+        self.state.set_audio_level(self.calculate_audio_level(chunk))
         try:
             self.audio_queue.put_nowait(chunk)
         except queue.Full:
@@ -322,6 +330,7 @@ class AudioCoordinator:
 
         self.stop_event.set()
         self.state.running = False
+        self.state.set_audio_level(0.0)
         if self.stream is not None:
             try:
                 self.stream.stop()
@@ -389,6 +398,21 @@ class AudioCoordinator:
             threshold=0.35,
         )
         return len(speech) > 0
+
+    def calculate_audio_level(self, chunk: np.ndarray) -> float:
+        """將音訊塊振幅轉成 0-100 的 UI 音量值。
+
+        原始麥克風輸入通常落在很小的浮點範圍，因此這裡同時參考 peak 與 RMS，
+        並做適度放大，讓 GUI 上的動態更容易觀察。
+        """
+
+        normalized = normalize_audio(chunk)
+        if normalized.size == 0:
+            return 0.0
+        peak = float(np.max(np.abs(normalized)))
+        rms = float(np.sqrt(np.mean(np.square(normalized))))
+        level = max(peak * 140.0, rms * 220.0)
+        return min(100.0, level)
 
     def enqueue_draft_update(self) -> None:
         """送出最新草稿辨識請求。
@@ -508,6 +532,7 @@ class App:
         self.root.geometry("1000x720")
 
         self.status_var = tk.StringVar(value="準備中…")
+        self.audio_level_var = tk.DoubleVar(value=0.0)
         self.device_var = tk.StringVar()
         self.draft_model_var = tk.StringVar(value=args.draft_model)
         self.breeze_model_var = tk.StringVar(value=BREEZE_MODELS[0])
@@ -516,9 +541,23 @@ class App:
         self.draft_update_var = tk.StringVar(value=str(args.draft_update_s))
         self.max_segment_var = tk.StringVar(value=str(args.max_segment_s))
 
+        self._configure_styles()
         self._build_ui()
         self.refresh_devices()
         self.poll_state()
+
+    def _configure_styles(self) -> None:
+        """設定 GUI 樣式。"""
+
+        style = ttk.Style(self.root)
+        style.configure(
+            "AudioLevel.Horizontal.TProgressbar",
+            troughcolor="#F3F0D7",
+            background="#F2C94C",
+            bordercolor="#D4A017",
+            lightcolor="#F7D96B",
+            darkcolor="#C99812",
+        )
 
     def _build_ui(self) -> None:
         """建立 GUI 元件。"""
@@ -575,6 +614,17 @@ class App:
         status_frame.pack(fill=tk.X)
         ttk.Label(status_frame, text="狀態：").pack(side=tk.LEFT)
         ttk.Label(status_frame, textvariable=self.status_var).pack(side=tk.LEFT)
+        ttk.Label(status_frame, text="音量：").pack(side=tk.LEFT, padx=(16, 6))
+        self.audio_level_bar = ttk.Progressbar(
+            status_frame,
+            orient=tk.HORIZONTAL,
+            mode="determinate",
+            maximum=100,
+            variable=self.audio_level_var,
+            length=180,
+            style="AudioLevel.Horizontal.TProgressbar",
+        )
+        self.audio_level_bar.pack(side=tk.LEFT)
 
         draft_frame = ttk.LabelFrame(self.root, text="即時草稿", padding=10)
         draft_frame.pack(fill=tk.BOTH, expand=False, padx=12, pady=(10, 6))
@@ -621,6 +671,7 @@ class App:
 
         self.state.clear()
         self.status_var.set("已清空")
+        self.audio_level_var.set(0.0)
         self.rendered_draft = ""
         self.rendered_final_lines = []
         self._replace_text(self.draft_text, "")
@@ -702,6 +753,7 @@ class App:
 
         snap = self.state.snapshot()
         self.status_var.set(snap["status_text"])
+        self.audio_level_var.set(snap["audio_level"])
         self._sync_draft_text(snap["draft"])
         self._sync_final_text(snap["final_lines"])
         if not snap["running"] and self.coordinator is None:

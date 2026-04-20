@@ -5,6 +5,7 @@
 ## 功能
 
 - 麥克風輸入裝置選擇
+- 黃色即時音量指示條
 - 即時草稿字幕
 - Breeze 精修後的正式字幕
 - 開始 / 停止 / 清空文字
@@ -46,6 +47,7 @@ python realtime_breeze_gui.py \
 ## 介面說明
 
 - 麥克風：選擇輸入裝置
+- 音量：黃色進度條，顯示目前麥克風輸入的即時振幅
 - 草稿模型：選擇即時字幕使用的 Whisper 模型
 - 精修模型：目前固定為 `MediaTek-Research/Breeze-ASR-26`
 - `min speech ms`：VAD 判定為語音所需的最小長度
@@ -91,7 +93,7 @@ python realtime_breeze_gui.py \
 
 程式內部大致分成四段：
 
-1. `audio_callback()` 只把音訊塊送進 queue
+1. `audio_callback()` 先計算即時音量，再把音訊塊送進 queue
 2. `processing_worker()` 做 VAD、切段、排入草稿與正式辨識
 3. `draft_worker()` 專門處理草稿字幕
 4. `refine_worker()` 專門處理 Breeze 正式精修
@@ -102,6 +104,7 @@ python realtime_breeze_gui.py \
 
 - 第一次啟動時，模型可能需要下載，屬正常現象
 - 如果你在 macOS 上執行，請先確認 Terminal、iTerm、PyCharm 或 VSCode 已取得麥克風權限
+- 黃色音量條主要用來確認 GUI 是否有收到聲音，不代表最終辨識品質
 - 即時草稿追求低延遲，品質可能略低於正式字幕
 - Breeze-ASR-26 較大，正式字幕比草稿慢是正常行為
 
@@ -111,6 +114,7 @@ python realtime_breeze_gui.py \
 
 - 檢查 macOS 麥克風權限是否已開給目前執行程式的應用程式
 - 確認 GUI 上方選到正確輸入裝置
+- 先觀察黃色音量條是否有跳動；若完全沒有，優先檢查輸入來源
 - 先把 `min speech ms` 調成 `10` 或 `15` 測試
 - 確認目前麥克風真的有輸入，不是選到虛擬或靜音裝置
 

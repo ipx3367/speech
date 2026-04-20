@@ -20,6 +20,14 @@ SAMPLE_RATE = 16000
 CHANNELS = 1
 BLOCK_MS = 200
 BLOCK_SIZE = SAMPLE_RATE * BLOCK_MS // 1000
+DRAFT_MODELS = [
+    "openai/whisper-tiny",
+    "openai/whisper-base",
+    "openai/whisper-small",
+]
+BREEZE_MODELS = [
+    "MediaTek-Research/Breeze-ASR-26",
+]
 
 
 @dataclass
@@ -107,11 +115,11 @@ def load_draft_asr(model_name: str):
     )
 
 
-def load_breeze_asr():
+def load_breeze_asr(model_name: str):
     device, dtype = pick_device_for_torch()
     return pipeline(
         task="automatic-speech-recognition",
-        model="MediaTek-Research/Breeze-ASR-26",
+        model=model_name,
         chunk_length_s=20,
         torch_dtype=dtype,
         device=device,
@@ -329,6 +337,8 @@ class App:
 
         self.status_var = tk.StringVar(value="準備中…")
         self.device_var = tk.StringVar()
+        self.draft_model_var = tk.StringVar(value=args.draft_model)
+        self.breeze_model_var = tk.StringVar(value=BREEZE_MODELS[0])
         self.min_speech_var = tk.StringVar(value=str(args.min_speech_ms))
         self.silence_end_var = tk.StringVar(value=str(args.silence_end_ms))
         self.draft_update_var = tk.StringVar(value=str(args.draft_update_s))
@@ -347,17 +357,37 @@ class App:
         self.device_combo.grid(row=0, column=1, sticky=tk.W, padx=6)
         ttk.Button(top, text="重新整理", command=self.refresh_devices).grid(row=0, column=2, padx=6)
 
-        ttk.Label(top, text="min speech ms").grid(row=1, column=0, sticky=tk.W, pady=(8, 0))
-        ttk.Entry(top, textvariable=self.min_speech_var, width=10).grid(row=1, column=1, sticky=tk.W, padx=6, pady=(8, 0))
+        ttk.Label(top, text="草稿模型").grid(row=1, column=0, sticky=tk.W, pady=(8, 0))
+        self.draft_model_combo = ttk.Combobox(
+            top,
+            textvariable=self.draft_model_var,
+            state="readonly",
+            width=48,
+            values=DRAFT_MODELS,
+        )
+        self.draft_model_combo.grid(row=1, column=1, sticky=tk.W, padx=6, pady=(8, 0))
 
-        ttk.Label(top, text="silence end ms").grid(row=1, column=2, sticky=tk.W, pady=(8, 0))
-        ttk.Entry(top, textvariable=self.silence_end_var, width=10).grid(row=1, column=3, sticky=tk.W, padx=6, pady=(8, 0))
+        ttk.Label(top, text="精修模型").grid(row=2, column=0, sticky=tk.W, pady=(8, 0))
+        self.breeze_model_combo = ttk.Combobox(
+            top,
+            textvariable=self.breeze_model_var,
+            state="readonly",
+            width=48,
+            values=BREEZE_MODELS,
+        )
+        self.breeze_model_combo.grid(row=2, column=1, sticky=tk.W, padx=6, pady=(8, 0))
 
-        ttk.Label(top, text="draft update s").grid(row=2, column=0, sticky=tk.W, pady=(8, 0))
-        ttk.Entry(top, textvariable=self.draft_update_var, width=10).grid(row=2, column=1, sticky=tk.W, padx=6, pady=(8, 0))
+        ttk.Label(top, text="min speech ms").grid(row=3, column=0, sticky=tk.W, pady=(8, 0))
+        ttk.Entry(top, textvariable=self.min_speech_var, width=10).grid(row=3, column=1, sticky=tk.W, padx=6, pady=(8, 0))
 
-        ttk.Label(top, text="max segment s").grid(row=2, column=2, sticky=tk.W, pady=(8, 0))
-        ttk.Entry(top, textvariable=self.max_segment_var, width=10).grid(row=2, column=3, sticky=tk.W, padx=6, pady=(8, 0))
+        ttk.Label(top, text="silence end ms").grid(row=3, column=2, sticky=tk.W, pady=(8, 0))
+        ttk.Entry(top, textvariable=self.silence_end_var, width=10).grid(row=3, column=3, sticky=tk.W, padx=6, pady=(8, 0))
+
+        ttk.Label(top, text="draft update s").grid(row=4, column=0, sticky=tk.W, pady=(8, 0))
+        ttk.Entry(top, textvariable=self.draft_update_var, width=10).grid(row=4, column=1, sticky=tk.W, padx=6, pady=(8, 0))
+
+        ttk.Label(top, text="max segment s").grid(row=4, column=2, sticky=tk.W, pady=(8, 0))
+        ttk.Entry(top, textvariable=self.max_segment_var, width=10).grid(row=4, column=3, sticky=tk.W, padx=6, pady=(8, 0))
 
         btns = ttk.Frame(self.root, padding=(12, 0, 12, 0))
         btns.pack(fill=tk.X)
@@ -430,6 +460,8 @@ class App:
 
         label = self.device_var.get().strip()
         input_device = self.device_map.get(label)
+        draft_model = self.draft_model_var.get().strip() or self.args.draft_model
+        breeze_model = self.breeze_model_var.get().strip() or BREEZE_MODELS[0]
 
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
@@ -441,9 +473,9 @@ class App:
                 self.state.set_status("載入 VAD…")
                 vad_model, get_speech_timestamps = load_vad_model()
                 self.state.set_status("載入即時草稿模型…")
-                draft_pipe = load_draft_asr(self.args.draft_model)
+                draft_pipe = load_draft_asr(draft_model)
                 self.state.set_status("載入 Breeze-ASR-26…")
-                breeze_pipe = load_breeze_asr()
+                breeze_pipe = load_breeze_asr(breeze_model)
                 self.coordinator = AudioCoordinator(
                     state=self.state,
                     draft_pipe=draft_pipe,
@@ -505,10 +537,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Breeze 即時字幕 GUI")
     parser.add_argument("--input-device", type=int, default=None, help="sounddevice 輸入裝置 index")
     parser.add_argument("--draft-model", default="openai/whisper-small", help="即時草稿模型")
-    parser.add_argument("--min-speech-ms", type=int, default=60, help="VAD 最小語音長度")
-    parser.add_argument("--max-segment-s", type=float, default=6.0, help="單段最長秒數")
-    parser.add_argument("--silence-end-ms", type=int, default=700, help="停頓多久視為一句結束")
-    parser.add_argument("--draft-update-s", type=float, default=0.8, help="多久更新一次草稿")
+    parser.add_argument("--min-speech-ms", type=int, default=15, help="VAD 最小語音長度")
+    parser.add_argument("--max-segment-s", type=float, default=14.0, help="單段最長秒數")
+    parser.add_argument("--silence-end-ms", type=int, default=250, help="停頓多久視為一句結束")
+    parser.add_argument("--draft-update-s", type=float, default=0.25, help="多久更新一次草稿")
     return parser.parse_args()
 
 
